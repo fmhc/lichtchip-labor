@@ -1,0 +1,8 @@
+sim.bak-*/
+shots/
+venv/
+__pycache__/
+*.pyc
+tools/remote.env
+
+private/

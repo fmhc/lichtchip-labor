@@ -1,0 +1,8 @@
+<!doctype html><meta charset=utf-8><body style="background:#fff;font:20px monospace"><pre id=o>start</pre><script type=module>
+const o=document.getElementById('o');
+try{ if(!navigator.gpu){o.textContent='NO navigator.gpu';throw 0}
+const a=await navigator.gpu.requestAdapter({powerPreference:'high-performance'}); if(!a){o.textContent='NO ADAPTER';throw 0}
+const info=a.info||{}; const d=await a.requestDevice();
+o.textContent='OK vendor='+info.vendor+' arch='+info.architecture+' desc='+info.description+' maxBuf='+a.limits.maxStorageBufferBindingSize; document.title='OK';
+}catch(e){ if(e) o.textContent+=' ERR '+e }
+</script>

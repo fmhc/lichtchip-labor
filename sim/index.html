@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lichtchip Lab</title>
+<link rel="stylesheet" href="css/lab.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="brand-mark" aria-hidden="true">λ</div>
+  <div><h1>Lichtchip Lab</h1><p>2D wave simulator for photonic chips with Kerr nonlinearity, WebGPU</p></div>
+  <span class="instrument-tag">2D / TM <span>· WebGPU</span></span>
+</header>
+<div id="error" class="error-panel" role="alert" hidden><strong id="errorTitle">Simulation not ready</strong><p id="errorText"></p><p id="gpuHelp" hidden>WebGPU requires HTTPS or localhost, an available adapter and compatible GPU drivers. There is no CPU fallback.</p><button id="reload" hidden>Reload page</button></div>
+<main>
+<aside aria-label="Configure experiment">
+  <div class="eyebrow">01 / Experiment</div>
+  <label class="sr-only" for="preset">Preset</label><select id="preset"></select>
+  <p id="desc"></p>
+  <section class="live-panel" aria-labelledby="liveHeading">
+    <div class="section-heading"><h2 id="liveHeading">Light source</h2><span class="badge">● LIVE</span></div>
+    <p class="help">Adjust while the simulation runs.</p>
+    <div id="liveParams"></div>
+    <p id="sourceNote" class="help" hidden>The measurement sequence controls source A during measurement.</p>
+  </section>
+  <details class="setup">
+    <summary>Geometry &amp; material <span>Rebuild</span></summary>
+    <p class="help">Changes to geometry, material or the Kerr model restart the simulation.</p>
+    <div id="params"></div>
+    <label class="stacked">Kerr model
+      <select id="kerrModel" title="Instantaneous: the material follows the field immediately. Debye: delayed response."><option value="instant">Instantaneous (electronic)</option><option value="debye">Delayed (Debye)</option></select></label>
+    <label class="inline">Response time τ <input id="tau" type="number" min="0.05" max="1000" step="0.05" value="30" title="Response time in optical periods; restarts the experiment."> periods</label>
+    <p class="help">Debye is a qualitative relaxation model. A short response time produces a phase lag; no calibrated thermal or carrier model is included.</p>
+  </details>
+  <details class="scene-info"><summary>Geometry and estimates</summary><div id="info"></div></details>
+  <p class="model-note"><strong>A model for learning.</strong> χ³ is exaggerated for teaching. Real Kerr index changes are around Δn ≈ 10⁻⁸ to 10⁻⁶.</p>
+	<details>
+		<summary>What is computed?</summary>
+		<p>Maxwell’s equations in 2D for light with its electric field perpendicular to the image plane (TM, E<sub>z</sub> only). For this polarization, they reduce exactly to a scalar wave equation: ∂²D/∂t² = ∇²E with D = εE + χ³·N·E.</p>
+		<ul>
+			<li>Kerr effect: N = E² (instantaneous), or N follows E² with response time τ (Debye). Fundamental-frequency approximation: Δε ≈ ¾χ³A² for the instantaneous model. The approximation ≈ ½χ³A² applies only to slow Debye response (ωτ ≫ 1). Otherwise, the real part is c(τ)χ³A² with c(τ) = ½ + 1/[4(1+(2ωτ)²)]; a quadrature component also appears. Δt/τ ≤ 1 is checked.</li>
+			<li>Grid: isotropic 9-point Laplacian, leapfrog time step Δt = 0.5 cells/c. Boundary: sponge/absorbing layer (shown dark).</li>
+			<li>Sources inject the computed fundamental mode consistently with the stencil. Probes sum smoothed E² along a line: a proxy for relative intensity. The spectrum uses one cell per probe. The ratio approximates power transmission only for identical linear single-mode ports with small reflections. Direction and energy flux are not measured.</li>
+			<li><b>Limits:</b> χ³ is exaggerated by orders of magnitude to make effects visible within a few hundred wavelengths. Real Kerr index changes are around Δn ≈ 10⁻⁸…10⁻⁶, requiring resonators with a high quality factor Q. The 2D model omits the chip height: a real device requires a 3D calculation.</li>
+		</ul>
+		<p class="dim">Inspired by WaveDude Next (A. Gräf, GPL-3) and Wave Dude 2D (J. Vleggaar). Independently written; no code reused.</p>
+	</details>
+</aside>
+<section class="work" aria-label="Simulation and measurements">
+  <div class="section-heading workspace-heading"><div class="eyebrow">02 / Observe</div><span id="runState" class="badge">● RUNNING</span></div>
+  <div class="instrument">
+    <div class="toolbar" aria-label="Control simulation">
+      <div class="tool-group"><button id="run" class="primary" title="Pause / Resume · Space">Pause</button><button id="reset" title="Reset fields and cancel all measurements">Reset</button></div>
+      <label class="tool-control" for="spf">Steps / frame <span class="range-value"><input id="spf" type="range" min="1" max="400" value="60"><output id="spfV">60</output></span></label>
+      <label class="tool-control">View <select id="viewMode"><option value="0">Field E ±</option><option value="1">Intensity ⟨E²⟩</option><option value="2">Intensity · log</option></select></label>
+      <label class="tool-control">Brightness <input id="gain" type="range" min="-1.5" max="1.5" step="0.05" value="0" title="Changes the display only, not the measured values."></label>
+      <label class="check"><input type="checkbox" id="showMat" checked> Material</label>
+    </div>
+    <div id="stage"><canvas id="gpu" aria-label="Simulated light field"></canvas><canvas id="overlay" aria-hidden="true"></canvas></div>
+    <div class="stage-meta">
+      <div class="color-key"><span id="colorTitle">Field E</span><div><div id="colorRamp"></div><div id="colorTicks"></div></div></div>
+      <div class="scale-key"><span id="scaleBar"></span><span id="scaleLabel"></span></div>
+    </div>
+    <div class="stage-footer"><span id="cursorReadout">Hover over the field: position &amp; refractive index</span><span>Origin at top left · n excludes the Kerr contribution</span></div>
+  </div>
+  <div class="status-line"><span id="status">Preparing simulation …</span><span class="keyboard-hint"><kbd>Space</kbd> Pause / Resume</span></div>
+  <p id="unitNote" class="help unit-note"></p>
+  <section class="card probe-card" aria-labelledby="probeHeading">
+    <div class="section-heading"><h2 id="probeHeading">Probes</h2><span class="help">⟨E²⟩ proxy · rel. intensity</span></div>
+    <p class="help">No directional energy flux. Port ratios are approximate for identical linear single-mode ports with small reflections.</p>
+    <div id="probes"><p class="help">No probe signal yet.</p></div>
+  </section>
+  <section id="measurement" aria-labelledby="measureHeading">
+    <div class="section-heading measurement-heading"><div class="eyebrow" id="measureHeading">03 / Measure</div><span class="help" id="measurementHint">Increase and then decrease the amplitude</span></div>
+    <div class="workflow">
+      <div id="specPanel" class="spec-steps" hidden>
+        <div id="stepSpectrum" class="flow-step"><div class="step-heading"><span class="step-number">1</span><h3>Find resonance</h3><span id="specBadge" class="step-state">Ready</span></div>
+          <p class="help">Linear reference pulse: χ³ is disabled during measurement.</p><button id="specStart">Measure spectrum</button>
+          <progress id="specProgress" max="100" value="0" aria-label="Spectrum progress"></progress>
+        </div>
+        <div id="stepDetune" class="flow-step"><div class="step-heading"><span class="step-number">2</span><h3>Tune laser</h3><span id="detuneBadge" class="step-state">Next</span></div>
+          <p class="help">Set the laser just to the red side of the resonance.</p><button id="detune">Detune to red</button>
+        </div>
+        <div id="specState" class="measurement-state" role="status"></div>
+      </div>
+      <div id="sweepPanel" class="flow-step">
+        <div class="step-heading"><span id="sweepNumber" class="step-number">↗</span><h3>Amplitude ramp</h3><span id="sweepBadge" class="step-state">Ready</span></div>
+        <div class="sweep-settings"><label>A from <input id="swMin" type="number" step="0.01" title="Initial and final source amplitude."></label><label>to <input id="swMax" type="number" step="0.01" title="Peak amplitude at the turning point."></label><label>Duration / direction <input id="swDur" type="number" step="10" title="Duration per direction in 1000 time units."></label></div>
+        <p class="help">Duration in 1000 time units (0.1…1000). Start smoothly and settle, then ramp up ↗ and down ↘. A dynamic loop alone does not prove bistability. Compare with slower ramps and a linear control.</p>
+        <div class="btns"><button id="swStart">Start ramp</button><button id="swControl">Control χ³ = 0</button><button id="swStop">Stop</button><span id="swState" role="status"></span></div>
+        <progress id="sweepProgress" max="100" value="0" aria-label="Amplitude ramp progress"></progress>
+      </div>
+    </div>
+  </section>
+  <div class="plots">
+    <section class="plot-card" id="transferCard"><div class="plot-heading"><h2>Dynamic ramp loop</h2><span class="help">⟨E²⟩ proxy</span></div>
+      <div id="transferLegend" class="plot-legend"></div><canvas id="plotT" aria-label="Dynamic ramp loop: relative output intensity versus input"></canvas>
+      <p class="plot-note" id="transferNote">↗ Up: solid · ↘ Down: dashed</p>
+    </section>
+    <section class="plot-card" id="spectrumCard"><div class="plot-heading"><h2>Spectrum</h2><span class="help">Pulse + Fourier</span></div>
+      <div id="spectrumLegend" class="plot-legend"></div><canvas id="plotS" aria-label="Single-point spectral proxy versus vacuum wavelength"></canvas>
+      <p class="plot-note">Click the plot to set λ₀. Keyboard: use the wavelength number field under Geometry &amp; material. The dashed line marks the laser.</p>
+    </section>
+  </div>
+  <button id="exportData" disabled>Export measurements as CSV</button>
+</section>
+</main>
+<pre id="out" hidden></pre>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
